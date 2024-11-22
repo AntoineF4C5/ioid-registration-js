@@ -14,9 +14,14 @@ async function main() {
 
   // TODO: Implement code to list Device NFT Tokens owned by an address in ioIDDeviceRegistrar.js
   const deviceNFTContractAddress = '0x052bee3c214a80028091aDaC86d78C8d4dfB3764'; 
-  const tokenId = 5; // Example token ID
+  const tokenId = 6; // Example token ID
 
+  
   // Register the device
+
+  // This will sign both the NFT transfer approval and the device registration
+  // Optionally, the Device NT contract owner can call approveForAll 
+  // to approve the ioID registry to transfer the NFT without requiring the device owner to approve
   await registrar.registerDevice(device, owner, deviceNFTContractAddress, tokenId);
 }
 

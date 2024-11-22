@@ -1,7 +1,7 @@
 const { JsonRpcProvider, Wallet, Contract, AbiCoder, ethers } = require('ethers');
 const axios = require('axios');
 const https = require('https');
-
+const ERC721 = require('./ERC721');
 // Constants for defaults
 const DEFAULT_DEVICE_SERVICE_URL = 'https://192.168.1.1:8000';
 const DEFAULT_PROVIDER_URL = 'https://babel-api.testnet.iotex.io';
@@ -167,7 +167,7 @@ class IoTDeviceRegistrar {
     const signer = ethers.recoverAddress(hex, signature);
     // Log the signer address
     console.log("Signer address:", signer);
-    
+
     const { r, s, v } = ethers.Signature.from(signature);
 
     // Upload diddoc to IPFS and get CID
@@ -176,6 +176,10 @@ class IoTDeviceRegistrar {
 
     const ioIDRegistry = new Contract(this.ioIDRegistryAddress, ioIDRegistryABI, this.wallet);
     const uri = `ipfs://${cid}`; // IPFS URI using the CID
+
+    // Allow the ioID registry contract to spend the device NFT token
+    const deviceNFT = new ERC721(deviceNFTContractAddress, this.wallet);
+    const approvedAddress = await deviceNFT.approve(this.ioIDRegistryAddress, tokenId);
 
     const tx = await ioIDRegistry.register(
       deviceNFTContractAddress,
