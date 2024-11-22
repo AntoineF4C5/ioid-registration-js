@@ -163,11 +163,16 @@ class IoTDeviceRegistrar {
     const hex = await this.computeDigest(device.did, owner);
     const signature = await this.requestSignature(hex);
 
+    // recver the signer
+    const signer = ethers.recoverAddress(hex, signature);
+    // Log the signer address
+    console.log("Signer address:", signer);
+    
+    const { r, s, v } = ethers.Signature.from(signature);
+
     // Upload diddoc to IPFS and get CID
     const diddoc = await this.requestDidDoc();
     const cid = await this.uploadDidDocToIpfs(diddoc);
-
-    const { r, s, v } = ethers.Signature.from(signature);
 
     const ioIDRegistry = new Contract(this.ioIDRegistryAddress, ioIDRegistryABI, this.wallet);
     const uri = `ipfs://${cid}`; // IPFS URI using the CID
