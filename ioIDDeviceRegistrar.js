@@ -2,11 +2,14 @@ const { JsonRpcProvider, Wallet, Contract, AbiCoder, ethers } = require('ethers'
 const axios = require('axios');
 const https = require('https');
 const ERC721 = require('./ERC721');
+const fs = require('fs');
+const FormData = require('form-data');
+
 // Constants for defaults
 const DEFAULT_DEVICE_SERVICE_URL = 'https://192.168.1.1:8000';
 const DEFAULT_PROVIDER_URL = 'https://babel-api.testnet.iotex.io';
 const DEFAULT_IOID_REGISTRY_ADDRESS = '0x0A7e595C7889dF3652A19aF52C18377bF17e027D';
-const DEFAULT_IPFS_SERVICE_URL = ''; // Replace with your actual IPFS service URL
+const DEFAULT_IPFS_SERVICE_URL = 'http://127.0.0.1:5001/api/v0'; // Replace with your actual IPFS service URL
 
 // Contract ABI for ioIDRegistry (simplified)
 const ioIDRegistryABI = [
@@ -113,12 +116,12 @@ class IoTDeviceRegistrar {
   }
 
   // Upload diddoc to IPFS
-  async uploadDidDocToIpfs(diddoc) {
+  async uploadDidDocToIpfs(form) {
     try {
-      const response = await axios.post(`${this.ipfsServiceUrl}/upload`, { data: diddoc, type: 'ipfs' });
-      const { cid } = response.data;
-      console.log("Uploaded to IPFS with CID:", cid);
-      return cid;
+      const response = await axios.post(`${this.ipfsServiceUrl}/add`, form, { headers:{ ...form.getHeaders()}});
+      const { Hash } = response.data;
+      console.log("Uploaded to IPFS with CID:", Hash);
+      return Hash;
     } catch (error) {
       console.error("Error uploading to IPFS:", error.message);
       throw error;
@@ -172,15 +175,24 @@ class IoTDeviceRegistrar {
 
     // Upload diddoc to IPFS and get CID
     const diddoc = await this.requestDidDoc();
-    const cid = await this.uploadDidDocToIpfs(diddoc);
 
+    // write diddoc to file
+    fs.writeFileSync('diddoc.json', JSON.stringify(diddoc));
+    const form = new FormData();
+    form.append('diddoc', fs.readFileSync('diddoc.json'), 'diddoc.json');
+
+    const cid = await this.uploadDidDocToIpfs(form);
+
+    console.log("Registering device with ioID registry...");
     const ioIDRegistry = new Contract(this.ioIDRegistryAddress, ioIDRegistryABI, this.wallet);
     const uri = `ipfs://${cid}`; // IPFS URI using the CID
 
     // Allow the ioID registry contract to spend the device NFT token
     const deviceNFT = new ERC721(deviceNFTContractAddress, this.wallet);
+    console.log("Approving device NFT token transfer...");
     const approvedAddress = await deviceNFT.approve(this.ioIDRegistryAddress, tokenId);
 
+    console.log("Registering device with ioID registry...");
     const tx = await ioIDRegistry.register(
       deviceNFTContractAddress,
       tokenId,
