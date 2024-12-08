@@ -5,7 +5,7 @@
         "type": "node",
         "request": "launch",
         "name": "Run Script",
-        "program": "${file}",
+        "program": "${workspaceFolder}/index.js",
         "console": "integratedTerminal" // Ensure this is set to "integratedTerminal"
       }
     ]

@@ -1,17 +1,39 @@
-const { JsonRpcProvider, Wallet, Contract, AbiCoder, ethers } = require('ethers');
-const axios = require('axios');
-const https = require('https');
-const ERC721 = require('./ERC721');
+const Web3 = require("web3").default;
+const axios = require("axios");
+const https = require("https");
+
 // Constants for defaults
-const DEFAULT_DEVICE_SERVICE_URL = 'https://192.168.1.1:8000';
-const DEFAULT_PROVIDER_URL = 'https://babel-api.testnet.iotex.io';
-const DEFAULT_IOID_REGISTRY_ADDRESS = '0x0A7e595C7889dF3652A19aF52C18377bF17e027D';
-const DEFAULT_IPFS_SERVICE_URL = ''; // Replace with your actual IPFS service URL
+const DEFAULT_DEVICE_SERVICE_URL = "https://192.168.1.1:8000";
+const DEFAULT_PROVIDER_URL = "https://babel-api.testnet.iotex.io";
+const DEFAULT_IOID_REGISTRY_ADDRESS = "0x0A7e595C7889dF3652A19aF52C18377bF17e027D";
+const DEFAULT_IPFS_SERVICE_URL = ""; // Replace with your actual IPFS service URL
 
 // Contract ABI for ioIDRegistry (simplified)
 const ioIDRegistryABI = [
-  "function register(address deviceContract, uint256 tokenId, address user, address device, bytes32 hash, string uri, uint8 v, bytes32 r, bytes32 s) public",
-  "function nonces(address device) view returns (uint256)"
+  {
+    inputs: [
+      { name: "deviceContract", type: "address" },
+      { name: "tokenId", type: "uint256" },
+      { name: "user", type: "address" },
+      { name: "device", type: "address" },
+      { name: "hash", type: "bytes32" },
+      { name: "uri", type: "string" },
+      { name: "v", type: "uint8" },
+      { name: "r", type: "bytes32" },
+      { name: "s", type: "bytes32" },
+    ],
+    name: "register",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "device", type: "address" }],
+    name: "nonces",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ];
 
 class IoTDeviceRegistrar {
@@ -22,39 +44,39 @@ class IoTDeviceRegistrar {
     this.ipfsServiceUrl = DEFAULT_IPFS_SERVICE_URL;
     this.privateKey = privateKey;
 
-    // Initialize provider and wallet
-    this.provider = new JsonRpcProvider(this.providerUrl);
-    this.wallet = new Wallet(this.privateKey, this.provider);
+    // Initialize Web3
+    this.web3 = new Web3(this.providerUrl);
+    this.account = this.web3.eth.accounts.privateKeyToAccount(this.privateKey);
+    this.web3.eth.accounts.wallet.add(this.account);
   }
 
-  // Set device service URL
   setDeviceServiceUrl(url) {
     this.deviceServiceUrl = url;
   }
 
-  // Set provider URL
   setProviderUrl(url) {
     this.providerUrl = url;
-    this.provider = new JsonRpcProvider(this.providerUrl);
-    this.wallet = this.wallet.connect(this.provider);
+    this.web3.setProvider(new Web3.providers.HttpProvider(this.providerUrl));
   }
 
-  // Set ioID registry address
   setIoIDRegistryAddress(address) {
     this.ioIDRegistryAddress = address;
   }
 
-  // Set IPFS service URL
   setIpfsServiceUrl(url) {
     this.ipfsServiceUrl = url;
- }
+  }
 
-  // Fetch device information from the service
   async fetchDevice() {
     try {
-      console.log(`Fetching device information from ${this.deviceServiceUrl}/did...`);
+      console.log(
+        `Fetching device information from ${this.deviceServiceUrl}/did...`
+      );
       const agent = new https.Agent({ rejectUnauthorized: false });
-      const response = await axios.get(`${this.deviceServiceUrl}/did`, { httpsAgent: agent, timeout: 5000 });
+      const response = await axios.get(`${this.deviceServiceUrl}/did`, {
+        httpsAgent: agent,
+        timeout: 5000,
+      });
 
       if (response.data && response.data.did) {
         console.log(response.data);
@@ -68,54 +90,58 @@ class IoTDeviceRegistrar {
     }
   }
 
-  // Compute EIP-712 digest
   async computeDigest(did, owner) {
-    const EIP712DOMAIN_TYPEHASH = ethers.keccak256(
-      ethers.toUtf8Bytes("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
-    );
-    const PERMIT_TYPE_HASH = ethers.keccak256(
-      ethers.toUtf8Bytes("Permit(address owner,uint256 nonce)")
-    );
-
-    const formattedDid = did.startsWith("did:io:") ? `${did.slice(7)}` : did;
-    const nameHash = ethers.keccak256(ethers.toUtf8Bytes("ioIDRegistry"));
-    const versionHash = ethers.keccak256(ethers.toUtf8Bytes("1"));
-    const chainId = (await this.provider.getNetwork()).chainId;
-    const verifyingContract = this.ioIDRegistryAddress;
-
-    const abiCoder = new AbiCoder();
-    const DOMAIN_SEPARATOR = ethers.keccak256(
-      abiCoder.encode(
+    const domainSeparator = this.web3.utils.keccak256(
+      this.web3.eth.abi.encodeParameters(
         ["bytes32", "bytes32", "bytes32", "uint256", "address"],
-        [EIP712DOMAIN_TYPEHASH, nameHash, versionHash, chainId, verifyingContract]
+        [
+          this.web3.utils.keccak256(
+            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+          ),
+          this.web3.utils.keccak256("ioIDRegistry"),
+          this.web3.utils.keccak256("1"),
+          await this.web3.eth.getChainId(),
+          this.ioIDRegistryAddress,
+        ]
       )
     );
 
-    const ioIDRegistry = new Contract(this.ioIDRegistryAddress, ioIDRegistryABI, this.provider);
-    const nonce = await ioIDRegistry.nonces(formattedDid);
+    const ioIDRegistry = new this.web3.eth.Contract(
+      ioIDRegistryABI,
+      this.ioIDRegistryAddress
+    );
+    const nonce = await ioIDRegistry.methods
+      .nonces(did.replace("did:io:", ""))
+      .call();
 
-    const dataHash = ethers.keccak256(
-      abiCoder.encode(
+    const dataHash = this.web3.utils.keccak256(
+      this.web3.eth.abi.encodeParameters(
         ["bytes32", "address", "uint256"],
-        [PERMIT_TYPE_HASH, owner, nonce]
+        [
+          this.web3.utils.keccak256("Permit(address owner,uint256 nonce)"),
+          owner,
+          nonce,
+        ]
       )
     );
 
-    const digest = ethers.keccak256(
-      ethers.concat([
-        ethers.toUtf8Bytes("\x19\x01"),
-        DOMAIN_SEPARATOR,
-        dataHash
-      ])
+    const data = this.web3.utils.encodePacked(
+      "\x19\x01",
+      domainSeparator,
+      dataHash
     );
-
-    return digest;
+    const digest = this.web3.utils.keccak256(data);
+    console.log("Computed digest:", digest);
+    console.log("Data:", data);
+    return { data, digest };
   }
 
-  // Upload diddoc to IPFS
   async uploadDidDocToIpfs(diddoc) {
     try {
-      const response = await axios.post(`${this.ipfsServiceUrl}/upload`, { data: diddoc, type: 'ipfs' });
+      const response = await axios.post(`${this.ipfsServiceUrl}/upload`, {
+        data: diddoc,
+        type: "ipfs",
+      });
       const { cid } = response.data;
       console.log("Uploaded to IPFS with CID:", cid);
       return cid;
@@ -125,13 +151,16 @@ class IoTDeviceRegistrar {
     }
   }
 
-  // Request signature from device
-  async requestSignature(hex) {
+  async requestSignature(digest) {
     try {
       const agent = new https.Agent({ rejectUnauthorized: false });
       console.log("Requesting signature from device...");
-      const signResponse = await axios.post(`${this.deviceServiceUrl}/sign`, { hex }, { httpsAgent: agent });
-      console.log(signResponse.data.sign);
+      const signResponse = await axios.post(
+        `${this.deviceServiceUrl}/sign`,
+        { hex: digest },
+        { httpsAgent: agent }
+      );
+      console.log("Signature:", signResponse.data.sign);
       return signResponse.data.sign;
     } catch (error) {
       console.error("Error requesting signature:", error.message);
@@ -139,12 +168,14 @@ class IoTDeviceRegistrar {
     }
   }
 
-  // Request DID doc from device
   async requestDidDoc() {
     try {
       console.log("Requesting DID doc from device...");
       const agent = new https.Agent({ rejectUnauthorized: false });
-      const response = await axios.get(`${this.deviceServiceUrl}/diddoc`, { httpsAgent: agent, timeout: 5000 });
+      const response = await axios.get(`${this.deviceServiceUrl}/diddoc`, {
+        httpsAgent: agent,
+        timeout: 5000,
+      });
 
       if (response.data && response.data.diddoc) {
         console.log(response.data.diddoc);
@@ -158,45 +189,74 @@ class IoTDeviceRegistrar {
     }
   }
 
-  // Register device
+  // Decode the signature r, s, v
+  decodeSignature(digest, signature, signer) {
+    let signerAddress1 = this.web3.eth.accounts.recover(
+      digest, '0x1c', 
+      signature.substring(0, 66), 
+      '0x' + signature.substring(66, 130), true);
+
+    let signerAddress2 = this.web3.eth.accounts.recover(
+      digest, '0x1b', 
+      signature.substring(0, 66), 
+      '0x' + signature.substring(66, 130), true)
+
+    const r = signature.substring(0, 66);
+    const s = "0x" + signature.substring(66, 130);
+
+    if (signerAddress1.toLowerCase() == signer.toLowerCase()) {
+      return { r, s, v: "0x1c" };
+    } else if (signerAddress2.toLowerCase() == signer.toLowerCase()) {
+      return { r, s, v: "0x1b" };
+    } else {
+      return null;
+    }
+  }
+
   async registerDevice(device, owner, deviceNFTContractAddress, tokenId) {
-    const hex = await this.computeDigest(device.did, owner);
-    const signature = await this.requestSignature(hex);
 
-    // recver the signer
-    const signer = ethers.recoverAddress(hex, signature);
-    // Log the signer address
-    console.log("Signer address:", signer);
+    const { _, digest } = await this.computeDigest(device.did, owner);
+    const signature = await this.requestSignature(digest);
+    const deviceAddress = device.did.replace("did:io:", "");
 
-    const { r, s, v } = ethers.Signature.from(signature);
+    const didAddress = device.did.replace("did:io:", "");
+    const { r, s, v } = this.decodeSignature(digest, signature, didAddress);
 
-    // Upload diddoc to IPFS and get CID
+    if (!r || !s || !v) {
+      throw new Error("Invalid signature");
+    }
+
     const diddoc = await this.requestDidDoc();
     const cid = await this.uploadDidDocToIpfs(diddoc);
+    const uri = `ipfs://${cid}`;
 
-    const ioIDRegistry = new Contract(this.ioIDRegistryAddress, ioIDRegistryABI, this.wallet);
-    const uri = `ipfs://${cid}`; // IPFS URI using the CID
-
-    // Allow the ioID registry contract to spend the device NFT token
-    const deviceNFT = new ERC721(deviceNFTContractAddress, this.wallet);
-    const approvedAddress = await deviceNFT.approve(this.ioIDRegistryAddress, tokenId);
-
-    const tx = await ioIDRegistry.register(
+    const ioIDRegistry = new this.web3.eth.Contract(
+      ioIDRegistryABI,
+      this.ioIDRegistryAddress
+    );
+    const tx = ioIDRegistry.methods.register(
       deviceNFTContractAddress,
       tokenId,
       owner,
-      device.did.replace('did:io:', ''),
-      hex,
+      didAddress,
+      digest,
       uri,
       v,
       r,
       s
     );
 
-    console.log("Transaction sent! Waiting for confirmation...");
-    const receipt = await tx.wait();
+    const gas = await tx.estimateGas({ from: this.account.address });
+    const gasPrice = await this.web3.eth.getGasPrice();
+
+    const receipt = await tx.send({
+      from: this.account.address,
+      gas,
+      gasPrice,
+    });
+
     console.log("Transaction confirmed!");
-    console.log("Transaction hash:", receipt.hash);
+    console.log("Transaction hash:", receipt.transactionHash);
   }
 }
 
