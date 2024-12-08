@@ -1,30 +1,64 @@
 const IoTDeviceRegistrar = require('./ioIDDeviceRegistrar');
+const Web3 = require('web3');
+
 require('dotenv').config();
 
-async function main() {
-  const registrar = new IoTDeviceRegistrar(process.env.PRIVATE_KEY);
+const constants = require('./constants');
+const DEVICE_NFT = require('./DEVICE_NFT');
+const { DEVICE_SERVICE_URL, IPFS_SERVICE_URL, DEVICE_OWNER_PRIVATE_KEY } = process.env;
 
-  // Cutsomize the device service URL
-  registrar.setDeviceServiceUrl("https://192.168.1.119:8000");
-  registrar.setIpfsServiceUrl(process.env.IPFS_SERVICE_URL);
+async function initializeRegistrar() {
+  try {
+    if (!DEVICE_OWNER_PRIVATE_KEY) {
+      throw new Error("Missing PRIVATE_KEY in environment variables.");
+    }
 
-  // Fetch device information
-  // TODO: Implement code to detect devices in ioIDDeviceRegistrar.js
-  const device = await registrar.fetchDevice();
-  const owner = registrar.account.address;
+    const registrar = new IoTDeviceRegistrar(DEVICE_OWNER_PRIVATE_KEY, {
+      deviceServiceUrl: DEVICE_SERVICE_URL,
+      ipfsServiceUrl: IPFS_SERVICE_URL,
+      deviceNFTContractAddress: process.env.DEVICE_NFT_CONTRACT_ADDRESS,
+    });
 
-  // TODO: Implement code to list Device NFT Tokens owned by an address in ioIDDeviceRegistrar.js
-  const deviceNFTContractAddress = '0x052bee3c214a80028091aDaC86d78C8d4dfB3764'; 
-  const tokenId = 6; // Example token ID
-  
-  // Register the device
-
-  // This will sign both the NFT transfer approval and the device registration
-  // Optionally, the Device NT contract owner can call approveForAll 
-  // to approve the ioID registry to transfer the NFT without requiring the device owner to approve
-  await registrar.registerDevice(device, owner, deviceNFTContractAddress, tokenId);
+    console.log("IoTDeviceRegistrar initialized successfully.");
+    return registrar;
+  } catch (error) {
+    console.error("Error initializing IoTDeviceRegistrar:", error.message);
+    process.exit(1); // Exit if initialization fails
+  }
 }
 
+async function main() {
+  const registrar = await initializeRegistrar();
+  const { DEVICE_NFT_CONTRACT_ADDRESS, TOKEN_ID } = process.env;
 
+  try {
+    // Steo 0: ensure we own the device NFT we are trying to register
+    const deviceOwner = registrar.account.address;
+    const deviceNFT = new DEVICE_NFT();
+    const nft_owner = await deviceNFT.ownerOf(TOKEN_ID);
+    if (nft_owner.toLowerCase() !== deviceOwner.toLowerCase()) {
+      throw new Error("Device NFT does not belong to the device owner");
+    }
+    // Step 1: Fetch device information
+    const device = await registrar.deviceService.fetchDevice();
+    // console.log("Device fetched successfully:", device);
 
-main().catch(console.error);
+    // Step 2: Register the device
+    console.log("Device DID:", device.did);
+    console.log("Owner address:", deviceOwner);
+    console.log("Device NFT contract address:", DEVICE_NFT_CONTRACT_ADDRESS);
+    console.log("Token ID:", TOKEN_ID);
+
+    await registrar.registerDevice(device, deviceOwner, TOKEN_ID);
+    console.log("Device registered successfully!");
+  } catch (error) {
+    console.error("Error in main process:", error);
+    process.exit(1);
+  }
+}
+
+// Run the main function
+main().catch((error) => {
+  console.error("Unhandled error:", error.message);
+  process.exit(1);
+});
