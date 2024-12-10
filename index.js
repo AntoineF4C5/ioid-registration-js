@@ -1,27 +1,17 @@
-<<<<<<< HEAD
-const IoTDeviceRegistrar = require("./ioIDDeviceRegistrar");
-require("dotenv").config();
-=======
 const IoTDeviceRegistrar = require('./ioIDDeviceRegistrar');
 const Web3 = require('web3');
 
 require('dotenv').config();
->>>>>>> original/development
 
 const constants = require('./constants');
 const DEVICE_NFT = require('./DEVICE_NFT');
 const { DEVICE_SERVICE_URL, IPFS_SERVICE_URL, DEVICE_OWNER_PRIVATE_KEY } = process.env;
 
-<<<<<<< HEAD
-  registrar.setDeviceServiceUrl("http://127.0.0.1:8000");
-  // registrar.setIpfsServiceUrl(process.env.IPFS_SERVICE_URL);
-=======
 async function initializeRegistrar() {
   try {
     if (!DEVICE_OWNER_PRIVATE_KEY) {
       throw new Error("Missing PRIVATE_KEY in environment variables.");
     }
->>>>>>> original/development
 
     const registrar = new IoTDeviceRegistrar(DEVICE_OWNER_PRIVATE_KEY, {
       deviceServiceUrl: DEVICE_SERVICE_URL,
@@ -29,26 +19,6 @@ async function initializeRegistrar() {
       deviceNFTContractAddress: process.env.DEVICE_NFT_CONTRACT_ADDRESS,
     });
 
-<<<<<<< HEAD
-  // TODO: Implement code to list Device NFT Tokens owned by an address in ioIDDeviceRegistrar.js
-  const deviceNFTContractAddress = process.env.DEVICE_NFT_ADDRESS;
-  const tokenId = 0; // Example token ID
-
-  // Register the device
-
-  // This will sign both the NFT transfer approval and the device registration
-  // Optionally, the Device NT contract owner can call approveForAll
-  // to approve the ioID registry to transfer the NFT without requiring the device owner to approve
-  await registrar.registerDevice(
-    device,
-    owner,
-    deviceNFTContractAddress,
-    tokenId
-  );
-}
-
-main().catch(console.error);
-=======
     console.log("IoTDeviceRegistrar initialized successfully.");
     return registrar;
   } catch (error) {
@@ -92,4 +62,3 @@ main().catch((error) => {
   console.error("Unhandled error:", error.message);
   process.exit(1);
 });
->>>>>>> original/development
